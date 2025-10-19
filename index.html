@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ExamVision — 監考動作分析 Demo</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans CJK TC", sans-serif; padding: 12px; background:#f7f9fc; text-align:center; }
+    video, canvas { width: 100%; max-width:480px; border:1px solid #ddd; border-radius:8px; display:block; margin:10px auto; }
+    #log { width:100%; max-width:480px; margin:8px auto; text-align:left; background:white; padding:8px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+    .frame-result { border-bottom:1px dashed #eee; padding:6px 0; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:12px; background:#eee; margin-right:6px; }
+    .high{background:#ffdddd;}
+    .medium{background:#fff3cc;}
+    .low{background:#ddffdd;}
+    button { padding:10px 14px; border-radius:8px; border:none; background:#0078ff; color:white; font-weight:600; cursor:pointer; }
+  </style>
+
+  <!-- MediaPipe CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+  <h1>ExamVision — 監考動作分析 Demo</h1>
+  <p>按下「開始擷取 5 幀」→ 每 5 秒擷取一張並做簡易事件偵測（示範用途）。</p>
+
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="overlay"></canvas>
+
+  <div style="max-width:480px;margin:10px auto;">
+    <button id="startBtn">開始擷取 5 幀</button>
+  </div>
+
+  <div id="log">狀態：準備中……</div>
+
+<script>
+(async () => {
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const logEl = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+  const NUM_FRAMES = 5;
+  const INTERVAL_MS = 5000;
+
+  // 啟動相機
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+  video.srcObject = stream;
+  await video.play();
+
+  // 設定 overlay 大小
+  function resizeCanvas(){
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+  }
+  video.addEventListener('loadeddata', resizeCanvas);
+  window.addEventListener('resize', resizeCanvas);
+
+  // init mediapipe
+  const faceMesh = new FaceMesh.FaceMesh({ locateFile: (f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+  faceMesh.setOptions({ maxNumFaces: 4, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+  const hands = new Hands.Hands({ locateFile: (f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({ maxNumHands: 2, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+  let latestFace = null, latestHand = null;
+  faceMesh.onResults(r => { latestFace = r; drawOverlay(); });
+  hands.onResults(r => { latestHand = r; drawOverlay(); });
+
+  const cameraUtils = new Camera(video, {
+    onFrame: async () => { await faceMesh.send({image: video}); await hands.send({image: video}); },
+    width: 640, height: 480
+  });
+  cameraUtils.start();
+
+  const ctx = overlay.getContext('2d');
+  function drawOverlay(){
+    if(!overlay.width) return;
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    if(latestFace && latestFace.multiFaceLandmarks){
+      for(const l of latestFace.multiFaceLandmarks){
+        drawConnectors(ctx, l, FaceMesh.FACEMESH_TESSELATION, {color:'#c0c0c0', lineWidth:0.5});
+        drawLandmarks(ctx, l, {color:'#ff0000', lineWidth:1, radius:0.8});
+      }
+    }
+    if(latestHand && latestHand.multiHandLandmarks){
+      for(const l of latestHand.multiHandLandmarks){
+        drawConnectors(ctx, l, Hands.HAND_CONNECTIONS, {color:'#00aa00', lineWidth:2});
+        drawLandmarks(ctx, l, {color:'#00ff00', lineWidth:1, radius:1});
+      }
+    }
+  }
+
+  function analyzeFrame(faceResults, handResults){
+    const out = { timestamp: Date.now(), faces:0, events:[], score:0 };
+    if(faceResults && faceResults.multiFaceLandmarks){
+      out.faces = faceResults.multiFaceLandmarks.length;
+      faceResults.multiFaceLandmarks.forEach((lm, idx) => {
+        const leftEye = lm[33], rightEye = lm[263], nose = lm[1];
+        if(leftEye && rightEye && nose){
+          const eyeMidX = (leftEye.x + rightEye.x)/2;
+          const dx = nose.x - eyeMidX;
+          if(dx > 0.03){ out.events.push({type:'head_right', idx, severity: Math.min(1, dx/0.08)}); out.score += 15*Math.min(1, dx/0.08); }
+          if(dx < -0.03){ out.events.push({type:'head_left', idx, severity: Math.min(1, Math.abs(dx)/0.08)}); out.score += 15*Math.min(1, Math.abs(dx)/0.08); }
+        }
+      });
+    }
+    if(handResults && handResults.multiHandLandmarks && faceResults && faceResults.multiFaceLandmarks){
+      handResults.multiHandLandmarks.forEach((handLm) => {
+        const hx = handLm[9].x, hy = handLm[9].y;
+        for(let i=0;i<faceResults.multiFaceLandmarks.length;i++){
+          const nose = faceResults.multiFaceLandmarks[i][1];
+          const dx = hx - nose.x, dy = hy - nose.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if(dist < 0.12){ out.events.push({type:'hand_near_head', faceIndex:i, severity: Math.max(0,1-dist/0.12)}); out.score += 25*Math.max(0,1-dist/0.12); }
+        }
+      });
+    }
+    if(out.faces >= 2){ out.events.push({type:'multiple_faces', count: out.faces}); out.score += 20*(out.faces-1); }
+    out.score = Math.max(0, Math.min(100, Math.round(out.score)));
+    return out;
+  }
+
+  function captureSnapshot(){
+    const tmp = document.createElement('canvas'); tmp.width = video.videoWidth; tmp.height = video.videoHeight;
+    const tctx = tmp.getContext('2d'); tctx.drawImage(video, 0, 0, tmp.width, tmp.height);
+    const dataUrl = tmp.toDataURL('image/jpeg', 0.7);
+    const faceR = latestFace ? JSON.parse(JSON.stringify(latestFace)) : null;
+    const handR = latestHand ? JSON.parse(JSON.stringify(latestHand)) : null;
+    const analysis = analyzeFrame(faceR, handR); analysis.image = dataUrl; return analysis;
+  }
+
+  function renderResult(res, idx){
+    const div = document.createElement('div'); div.className = 'frame-result';
+    const ts = new Date(res.timestamp).toLocaleTimeString();
+    div.innerHTML = `<strong>第 ${idx+1} 幀</strong> — ${ts} — 可疑指標: <span class="badge ${res.score>=60?'high':res.score>=30?'medium':'low'}">${res.score}</span>
+      <div>人數：${res.faces}</div>
+      <div>事件：${res.events.length?res.events.map(e=>e.type+'('+ (e.severity?Math.round(e.severity*100)/100:'') +')').join(', '):'無'}</div>
+      <div style="margin-top:6px;"><img src="${res.image}" style="width:160px;border:1px solid #ddd;"/></div>`;
+    logEl.appendChild(div);
+  }
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true; logEl.innerHTML = '<strong>開始擷取中……</strong>';
+    const results = [];
+    for(let i=0;i<NUM_FRAMES;i++){
+      await new Promise(r => setTimeout(r, 300));
+      const r = captureSnapshot(); renderResult(r, i); results.push(r);
+      if(i < NUM_FRAMES-1) await new Promise(r => setTimeout(r, INTERVAL_MS));
+    }
+    const highest = results.reduce((a,b)=> a.score>=b.score?a:b, results[0]);
+    logEl.innerHTML += `<div style="margin-top:8px;"><strong>測試完成。</strong> 最高提示: ${highest.score}（時間 ${new Date(highest.timestamp).toLocaleTimeString()}）。請以人工審核為準。</div>`;
+    startBtn.disabled = false;
+  });
+
+})();
+</script>
+</body>
+</html>
