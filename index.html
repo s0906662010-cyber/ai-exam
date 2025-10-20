@@ -31,8 +31,6 @@
   <video id="video" playsinline autoplay muted></video>
   <canvas id="overlay"></canvas>
 
-<div id="cameraStatus" style="margin:10px; font-weight:bold;">📷 載入中...</div>
-
  <div id="controls">
   <label for="cameraSelect" style="align-self:center; color:#333;">鏡頭：</label>
   <select id="cameraSelect"></select>
@@ -165,7 +163,6 @@ cameraSelect.addEventListener('change', async () => {
 
 // 初始化
 await loadCameras();
-
 // 啟動頁面時自動載入鏡頭
 window.addEventListener('load', async () => {
   await loadCameras();
@@ -184,6 +181,7 @@ cameraSelect.addEventListener('change', () => {
   const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.textContent || '未知';
   statusEl.textContent = `📷 目前使用：${selectedText}`;
 });
+
 
 })();
 </script>
