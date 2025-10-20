@@ -66,42 +66,43 @@ function stopStream() {
 }
 
 // 開啟指定鏡頭
-async function startCamera(deviceId = null) {
-  try {
-    let constraints;
+// 取得所有鏡頭清單並放進下拉選單
+async function loadCameras() {
+  const allDevices = await navigator.mediaDevices.enumerateDevices();
+  devices = allDevices.filter(d => d.kind === 'videoinput');
 
-    if (deviceId) {
-      // 若指定了 deviceId，直接用該鏡頭
-      constraints = { video: { deviceId: { exact: deviceId } } };
-    } else {
-      // 嘗試優先使用後鏡頭
-      constraints = { video: { facingMode: { ideal: "environment" } } };
+  cameraSelect.innerHTML = '';
+  devices.forEach((d, i) => {
+    const option = document.createElement('option');
+    option.value = d.deviceId;
+    option.textContent = d.label || `鏡頭 ${i + 1}`;
+    cameraSelect.appendChild(option);
+  });
+
+  if (devices.length > 0) {
+    // 嘗試預設使用「後鏡頭」，若沒有則使用第一個鏡頭
+    let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
+    if (!backCamera && devices.length > 1) {
+      backCamera = devices[devices.length - 1]; // 通常列表最後是後鏡頭
     }
 
-    // 先停掉現有的 stream（如果有）
-    if (currentStream) {
-      currentStream.getTracks().forEach(t => t.stop());
-    }
+    const defaultDevice = backCamera || devices[0];
+    currentDeviceId = defaultDevice.deviceId;
+    cameraSelect.value = currentDeviceId;
+    await startCamera(currentDeviceId);
 
-    // 嘗試啟動後鏡頭
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = currentStream;
-    log('📸 已啟動相機');
-
-  } catch (err) {
-    console.warn("後鏡頭啟動失敗，改用前鏡頭", err);
-
-    // 如果後鏡頭失敗，改用前鏡頭
-    try {
-      const fallbackConstraints = { video: { facingMode: { ideal: "user" } } };
-      currentStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-      video.srcObject = currentStream;
-      log('🤳 改用前鏡頭');
-    } catch (err2) {
-      log('❌ 無法啟動相機：' + err2.message);
-    }
+    log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
+  } else {
+    log('⚠️ 找不到鏡頭');
   }
 }
+
+// 當使用者從下拉選單選擇鏡頭時自動切換
+cameraSelect.addEventListener('change', async (e) => {
+  currentDeviceId = e.target.value;
+  await startCamera(currentDeviceId);
+  log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
+});
 
 
 // 取得所有鏡頭清單並放進下拉選單
