@@ -94,52 +94,42 @@ function showLog(html) {
   }
 
   // 取得所有鏡頭清單並放進下拉選單
-// 取得所有鏡頭清單並放進下拉選單（僅保留前鏡頭與主要後鏡頭）
-async function loadCameras() {
-  const allDevices = await navigator.mediaDevices.enumerateDevices();
-  const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
+  async function loadCameras() {
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    devices = allDevices.filter(d => d.kind === 'videoinput');
 
-  // 用來儲存前鏡頭與後鏡頭
-  let frontCamera = null;
-  let backCamera = null;
+    cameraSelect.innerHTML = '';
+    devices.forEach((d, i) => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
 
-  videoInputs.forEach(d => {
-    const label = d.label.toLowerCase();
-    if (!frontCamera && (label.includes('front') || label.includes('user') || label.includes('前'))) {
-      frontCamera = d;
-    } else if (!backCamera && (label.includes('back') || label.includes('rear') || label.includes('後'))) {
-      backCamera = d;
+      const label = d.label.toLowerCase();
+      if (label.includes('back') || label.includes('rear') || label.includes('後')) {
+        option.textContent = '後鏡頭';
+      } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
+        option.textContent = '前鏡頭';
+      } else {
+        option.textContent = `鏡頭 ${i + 1}`;
+      }
+      cameraSelect.appendChild(option);
+    });
+
+    if (devices.length > 0) {
+      // 預設使用後鏡頭，若沒有則使用第一個
+      let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
+      if (!backCamera && devices.length > 1) {
+        backCamera = devices[devices.length - 1];
+      }
+
+      const defaultDevice = backCamera || devices[0];
+      currentDeviceId = defaultDevice.deviceId;
+      cameraSelect.value = currentDeviceId;
+      await startCamera(currentDeviceId);
+      log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
+    } else {
+      log('⚠️ 找不到鏡頭');
     }
-  });
-
-  // 如果裝置標籤沒有前後字樣，就挑第一個當前鏡頭、最後一個當後鏡頭
-  if (!frontCamera && videoInputs.length > 0) frontCamera = videoInputs[0];
-  if (!backCamera && videoInputs.length > 1) backCamera = videoInputs[videoInputs.length - 1];
-
-  // 只保留找到的兩個鏡頭
-  devices = [frontCamera, backCamera].filter(Boolean);
-
-  // 重新生成下拉選單
-  cameraSelect.innerHTML = '';
-  devices.forEach((d, i) => {
-    const option = document.createElement('option');
-    option.value = d.deviceId;
-    option.textContent = i === 0 ? '前鏡頭' : '後鏡頭';
-    cameraSelect.appendChild(option);
-  });
-
-  // 預設啟動後鏡頭（若無則用前鏡頭）
-  if (devices.length > 0) {
-    const defaultDevice = backCamera || frontCamera;
-    currentDeviceId = defaultDevice.deviceId;
-    cameraSelect.value = currentDeviceId;
-    await startCamera(currentDeviceId);
-    log(`🎥 已啟動預設鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
-  } else {
-    log('⚠️ 找不到鏡頭');
   }
-}
-
 
   // 切換鏡頭按鈕
   switchBtn.addEventListener('click', async () => {
