@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ExamVision — 監考動作分析 Demo</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; padding: 12px; background:#f7f9fc; text-align:center; }
+    header { margin-bottom:8px; }
+    video, canvas { width: 100%; max-width:480px; border:1px solid #ddd; border-radius:8px; display:block; margin:10px auto; background:black; }
+    #controls { max-width:480px; margin:8px auto; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    button, select { padding:10px 12px; border-radius:8px; border: none; background:#0078ff; color:white; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:0.6; cursor:not-allowed; }
+    #log { width:100%; max-width:480px; margin:10px auto; text-align:left; background:white; padding:8px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.04); min-height:60px;}
+    .frame-result { border-bottom:1px dashed #eee; padding:6px 0; }
+    img.thumb { width:160px; border:1px solid #ddd; margin-top:6px; }
+  </style>
+
+  <!-- MediaPipe CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+  <header>
+    <h1>弊弊在目-考試監測做弊率分析系統</h1>
+    <p>按切換即可改變鏡頭，按「擷取幀」拍照並分析（示範用途）。</p>
+  </header>
+
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="overlay"></canvas>
+
+  <div id="cameraStatus" style="margin:10px; font-weight:bold;">📷 載入中...</div>
+
+  <div id="controls">
+    <label for="cameraSelect" style="align-self:center; color:#333;">鏡頭：</label>
+    <select id="cameraSelect"></select>
+    <button id="switchBtn">切換鏡頭</button>
+    <button id="captureBtn">拍攝並分析</button>
+  </div>
+
+  <div id="log">狀態：尚未啟動</div>
+
+<script>
+(async () => {
+  await navigator.mediaDevices.getUserMedia({ video: true }); // 先請求權限
+
+  // === 監測控制變數 & 顯示工具 ===
+const captureBtn = document.getElementById('captureBtn');
+let monitoring = false;   // 判斷現在是不是在監測中
+let monitorTimer = null;  // 儲存 setInterval 的 ID（之後可以停止）
+
+// 顯示分析結果到頁面上
+function showLog(html) {
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = html; // 把內容塞進 log 區塊
+}
+
+  const video = document.getElementById('video');
+  const cameraSelect = document.getElementById('cameraSelect');
+  const switchBtn = document.getElementById('switchBtn');
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('cameraStatus');
+
+  let currentStream = null;
+  let devices = [];
+  let currentDeviceId = null;
+
+  function log(msg) {
+    logEl.textContent = msg;
+  }
+
+  function stopStream() {
+    if (currentStream) {
+      currentStream.getTracks().forEach(t => t.stop());
+      currentStream = null;
+    }
+  }
+
+  async function startCamera(deviceId) {
+    try {
+      stopStream();
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+      });
+      video.srcObject = currentStream;
+
+      const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.textContent || '未知';
+      statusEl.textContent = `📷 目前使用：${selectedText}`;
+    } catch (err) {
+      log('❌ 開啟鏡頭失敗：' + err.message);
+    }
+  }
+
+  // 取得所有鏡頭清單並放進下拉選單
+  async function loadCameras() {
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    devices = allDevices.filter(d => d.kind === 'videoinput');
+
+    cameraSelect.innerHTML = '';
+    devices.forEach((d, i) => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
+
+      const label = d.label.toLowerCase();
+      if (label.includes('back') || label.includes('rear') || label.includes('後')) {
+        option.textContent = '後鏡頭';
+      } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
+        option.textContent = '前鏡頭';
+      } else {
+        option.textContent = `鏡頭 ${i + 1}`;
+      }
+      cameraSelect.appendChild(option);
+    });
+
+    if (devices.length > 0) {
+      // 預設使用後鏡頭，若沒有則使用第一個
+      let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
+      if (!backCamera && devices.length > 1) {
+        backCamera = devices[devices.length - 1];
+      }
+
+      const defaultDevice = backCamera || devices[0];
+      currentDeviceId = defaultDevice.deviceId;
+      cameraSelect.value = currentDeviceId;
+      await startCamera(currentDeviceId);
+      log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
+    } else {
+      log('⚠️ 找不到鏡頭');
+    }
+  }
+
+  // 切換鏡頭按鈕
+  switchBtn.addEventListener('click', async () => {
+    if (devices.length === 0) return;
+    const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
+    const nextIndex = (currentIndex + 1) % devices.length;
+    currentDeviceId = devices[nextIndex].deviceId;
+    cameraSelect.value = currentDeviceId;
+    await startCamera(currentDeviceId);
+    log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
+  });
+
+  // 下拉式選單變更時
+  cameraSelect.addEventListener('change', async () => {
+    currentDeviceId = cameraSelect.value;
+    await startCamera(currentDeviceId);
+    log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
+  });
+
+  // 初始化
+  await loadCameras();
+})();
+</script>
+</body>
+</html>
