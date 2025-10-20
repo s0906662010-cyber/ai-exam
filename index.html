@@ -83,67 +83,67 @@
     }
   }
 
-  // === 鏡頭載入（只保留一前一後） ===
+  // === 鏡頭載入（仍讀取全部，但只顯示前後） ===
   async function loadCameras() {
     const allDevices = await navigator.mediaDevices.enumerateDevices();
-    devices = allDevices.filter(d => d.kind === 'videoinput');
+    const allVideoDevices = allDevices.filter(d => d.kind === 'videoinput');
+    devices = allVideoDevices; // 仍記錄全部鏡頭
 
-    const frontCameras = [];
-    const backCameras = [];
-    const others = [];
+    const frontCam = allVideoDevices.find(d => 
+      d.label.toLowerCase().includes('front') || 
+      d.label.toLowerCase().includes('user') || 
+      d.label.includes('前')
+    );
+    const backCam = allVideoDevices.find(d => 
+      d.label.toLowerCase().includes('back') || 
+      d.label.toLowerCase().includes('rear') || 
+      d.label.includes('後')
+    );
 
-    devices.forEach(d => {
-      const label = d.label.toLowerCase();
-      if (label.includes('back') || label.includes('rear') || label.includes('後')) {
-        if (backCameras.length === 0) backCameras.push(d);
-      } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
-        if (frontCameras.length === 0) frontCameras.push(d);
-      } else {
-        others.push(d);
-      }
-    });
-
-    devices = [...frontCameras, ...backCameras, ...others];
     cameraSelect.innerHTML = '';
-    cameraSelect.innerHTML = '';
-let hasFront = false;
-let hasBack = false;
 
-devices.forEach((d) => {
-  const label = d.label.toLowerCase();
-  const option = document.createElement('option');
-  option.value = d.deviceId;
+    if (backCam) {
+      const option = document.createElement('option');
+      option.value = backCam.deviceId;
+      option.textContent = '後鏡頭';
+      cameraSelect.appendChild(option);
+    }
 
-  if (!hasBack && (label.includes('back') || label.includes('rear') || label.includes('後'))) {
-    option.textContent = '後鏡頭';
-    cameraSelect.appendChild(option);
-    hasBack = true;
-  } else if (!hasFront && (label.includes('front') || label.includes('user') || label.includes('前'))) {
-    option.textContent = '前鏡頭';
-    cameraSelect.appendChild(option);
-    hasFront = true;
-  }
-});
+    if (frontCam) {
+      const option = document.createElement('option');
+      option.value = frontCam.deviceId;
+      option.textContent = '前鏡頭';
+      cameraSelect.appendChild(option);
+    }
 
+    // 如果沒有標籤則至少顯示一個
+    if (!cameraSelect.options.length && allVideoDevices.length > 0) {
+      const option = document.createElement('option');
+      option.value = allVideoDevices[0].deviceId;
+      option.textContent = '預設鏡頭';
+      cameraSelect.appendChild(option);
+    }
 
-    if (devices.length > 0) {
-      const backCamera = backCameras[0] || null;
-      const defaultDevice = backCamera || devices[0];
+    // 啟動預設鏡頭
+    const defaultDevice = backCam || frontCam || allVideoDevices[0];
+    if (defaultDevice) {
       currentDeviceId = defaultDevice.deviceId;
       cameraSelect.value = currentDeviceId;
       await startCamera(currentDeviceId);
-      log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
+      log(`🎥 已啟動預設鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
     } else {
       log('⚠️ 找不到鏡頭');
     }
   }
 
-  // === 鏡頭切換 ===
+  // === 切換鏡頭 ===
   switchBtn.addEventListener('click', async () => {
-    if (devices.length === 0) return;
-    const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
-    const nextIndex = (currentIndex + 1) % devices.length;
-    currentDeviceId = devices[nextIndex].deviceId;
+    const options = cameraSelect.options;
+    if (options.length <= 1) return;
+
+    const currentIndex = Array.from(options).findIndex(o => o.value === currentDeviceId);
+    const nextIndex = (currentIndex + 1) % options.length;
+    currentDeviceId = options[nextIndex].value;
     cameraSelect.value = currentDeviceId;
     await startCamera(currentDeviceId);
     log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
@@ -170,7 +170,7 @@ devices.forEach((d) => {
       monitorBtn.textContent = '停止監測';
       log('⏳ 開始監測中，每 5 秒分析一次...');
       monitorTimer = setInterval(analyzeFrame, 5000);
-      analyzeFrame(); // 立即跑一次
+      analyzeFrame();
     } else {
       monitoring = false;
       clearInterval(monitorTimer);
