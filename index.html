@@ -12,8 +12,6 @@
     button, select { padding:10px 12px; border-radius:8px; border: none; background:#0078ff; color:white; font-weight:600; cursor:pointer; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
     #log { width:100%; max-width:480px; margin:10px auto; text-align:left; background:white; padding:8px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.04); min-height:60px;}
-    .frame-result { border-bottom:1px dashed #eee; padding:6px 0; }
-    img.thumb { width:160px; border:1px solid #ddd; margin-top:6px; }
   </style>
 
   <!-- MediaPipe CDN -->
@@ -24,8 +22,8 @@
 </head>
 <body>
   <header>
-    <h1>弊弊在目-考試監測做弊率分析系統</h1>
-    <p>按切換即可改變鏡頭，按「擷取幀」拍照並分析（示範用途）。</p>
+    <h1>弊弊在目 — 考試監測做弊率分析系統</h1>
+    <p>按「開始監測」後系統會每 5 秒分析一次動作（示範用途）</p>
   </header>
 
   <video id="video" playsinline autoplay muted></video>
@@ -37,7 +35,7 @@
     <label for="cameraSelect" style="align-self:center; color:#333;">鏡頭：</label>
     <select id="cameraSelect"></select>
     <button id="switchBtn">切換鏡頭</button>
-    <button id="captureBtn">拍攝並分析</button>
+    <button id="monitorBtn">開始監測</button>
   </div>
 
   <div id="log">狀態：尚未啟動</div>
@@ -49,15 +47,18 @@
   const video = document.getElementById('video');
   const cameraSelect = document.getElementById('cameraSelect');
   const switchBtn = document.getElementById('switchBtn');
+  const monitorBtn = document.getElementById('monitorBtn');
   const logEl = document.getElementById('log');
   const statusEl = document.getElementById('cameraStatus');
 
   let currentStream = null;
   let devices = [];
   let currentDeviceId = null;
+  let monitorTimer = null;
+  let monitoring = false;
 
   function log(msg) {
-    logEl.textContent = msg;
+    logEl.innerHTML = msg;
   }
 
   function stopStream() {
@@ -82,34 +83,51 @@
     }
   }
 
-  // 取得所有鏡頭清單並放進下拉選單
+  // === 鏡頭載入（只保留一前一後） ===
   async function loadCameras() {
     const allDevices = await navigator.mediaDevices.enumerateDevices();
     devices = allDevices.filter(d => d.kind === 'videoinput');
 
-    cameraSelect.innerHTML = '';
-    devices.forEach((d, i) => {
-      const option = document.createElement('option');
-      option.value = d.deviceId;
+    const frontCameras = [];
+    const backCameras = [];
+    const others = [];
 
+    devices.forEach(d => {
       const label = d.label.toLowerCase();
       if (label.includes('back') || label.includes('rear') || label.includes('後')) {
-        option.textContent = '後鏡頭';
+        if (backCameras.length === 0) backCameras.push(d);
       } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
-        option.textContent = '前鏡頭';
+        if (frontCameras.length === 0) frontCameras.push(d);
       } else {
-        option.textContent = `鏡頭 ${i + 1}`;
+        others.push(d);
       }
-      cameraSelect.appendChild(option);
     });
 
-    if (devices.length > 0) {
-      // 預設使用後鏡頭，若沒有則使用第一個
-      let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
-      if (!backCamera && devices.length > 1) {
-        backCamera = devices[devices.length - 1];
-      }
+    devices = [...frontCameras, ...backCameras, ...others];
+    cameraSelect.innerHTML = '';
+    cameraSelect.innerHTML = '';
+let hasFront = false;
+let hasBack = false;
 
+devices.forEach((d) => {
+  const label = d.label.toLowerCase();
+  const option = document.createElement('option');
+  option.value = d.deviceId;
+
+  if (!hasBack && (label.includes('back') || label.includes('rear') || label.includes('後'))) {
+    option.textContent = '後鏡頭';
+    cameraSelect.appendChild(option);
+    hasBack = true;
+  } else if (!hasFront && (label.includes('front') || label.includes('user') || label.includes('前'))) {
+    option.textContent = '前鏡頭';
+    cameraSelect.appendChild(option);
+    hasFront = true;
+  }
+});
+
+
+    if (devices.length > 0) {
+      const backCamera = backCameras[0] || null;
       const defaultDevice = backCamera || devices[0];
       currentDeviceId = defaultDevice.deviceId;
       cameraSelect.value = currentDeviceId;
@@ -120,7 +138,7 @@
     }
   }
 
-  // 切換鏡頭按鈕
+  // === 鏡頭切換 ===
   switchBtn.addEventListener('click', async () => {
     if (devices.length === 0) return;
     const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
@@ -131,14 +149,37 @@
     log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
   });
 
-  // 下拉式選單變更時
   cameraSelect.addEventListener('change', async () => {
     currentDeviceId = cameraSelect.value;
     await startCamera(currentDeviceId);
     log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
   });
 
-  // 初始化
+  // === 模擬分析 ===
+  function analyzeFrame() {
+    const random = Math.floor(Math.random() * 100);
+    const risk = random < 20 ? '🟢 安全' :
+                 random < 60 ? '🟡 可疑' : '🔴 高風險';
+    log(`📊 做弊機率：約 ${random}%　→　${risk}`);
+  }
+
+  // === 開始/停止監測 ===
+  monitorBtn.addEventListener('click', () => {
+    if (!monitoring) {
+      monitoring = true;
+      monitorBtn.textContent = '停止監測';
+      log('⏳ 開始監測中，每 5 秒分析一次...');
+      monitorTimer = setInterval(analyzeFrame, 5000);
+      analyzeFrame(); // 立即跑一次
+    } else {
+      monitoring = false;
+      clearInterval(monitorTimer);
+      monitorBtn.textContent = '開始監測';
+      log('🛑 已停止監測。');
+    }
+  });
+
+  // 初始化鏡頭
   await loadCameras();
 })();
 </script>
