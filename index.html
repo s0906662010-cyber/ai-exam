@@ -16,7 +16,7 @@
     img.thumb { width:160px; border:1px solid #ddd; margin-top:6px; }
   </style>
 
-  <!-- MediaPipe CDN (用於偵測 face & hands) -->
+  <!-- MediaPipe CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
@@ -31,139 +31,115 @@
   <video id="video" playsinline autoplay muted></video>
   <canvas id="overlay"></canvas>
 
- <div id="controls">
-  <label for="cameraSelect" style="align-self:center; color:#333;">鏡頭：</label>
-  <select id="cameraSelect"></select>
-  <button id="switchBtn">切換鏡頭</button>
-  <button id="captureBtn">拍攝並分析</button>
-</div>
+  <div id="cameraStatus" style="margin:10px; font-weight:bold;">📷 載入中...</div>
+
+  <div id="controls">
+    <label for="cameraSelect" style="align-self:center; color:#333;">鏡頭：</label>
+    <select id="cameraSelect"></select>
+    <button id="switchBtn">切換鏡頭</button>
+    <button id="captureBtn">拍攝並分析</button>
+  </div>
 
   <div id="log">狀態：尚未啟動</div>
 
 <script>
 (async () => {
-  
-const video = document.getElementById('video');
-const cameraSelect = document.getElementById('cameraSelect');
-const switchBtn = document.getElementById('switchBtn');
-const logEl = document.getElementById('log');
+  await navigator.mediaDevices.getUserMedia({ video: true }); // 先請求權限
 
-let currentStream = null;
-let devices = [];
-let currentDeviceId = null;
+  const video = document.getElementById('video');
+  const cameraSelect = document.getElementById('cameraSelect');
+  const switchBtn = document.getElementById('switchBtn');
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('cameraStatus');
 
-// 顯示訊息
-function log(msg) {
-  logEl.textContent = msg;
-}
+  let currentStream = null;
+  let devices = [];
+  let currentDeviceId = null;
 
-// 停止目前的鏡頭串流
-function stopStream() {
-  if (currentStream) {
-    currentStream.getTracks().forEach(t => t.stop());
-    currentStream = null;
-  }
-}
-
-// 開啟指定鏡頭
-// 取得所有鏡頭清單並放進下拉選單
-async function loadCameras() {
-  const allDevices = await navigator.mediaDevices.enumerateDevices();
-  devices = allDevices.filter(d => d.kind === 'videoinput');
-
-  cameraSelect.innerHTML = '';
-  devices.forEach((d, i) => {
-  const option = document.createElement('option');
-  option.value = d.deviceId;
-
-  // 判斷是前鏡頭或後鏡頭
-  const label = d.label.toLowerCase();
-  if (label.includes('back') || label.includes('rear') || label.includes('後')) {
-    option.textContent = '後鏡頭';
-  } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
-    option.textContent = '前鏡頭';
-  } else {
-    option.textContent = `鏡頭 ${i + 1}`;
+  function log(msg) {
+    logEl.textContent = msg;
   }
 
-  cameraSelect.appendChild(option);
-});
-
-
-  if (devices.length > 0) {
-    // 嘗試預設使用「後鏡頭」，若沒有則使用第一個鏡頭
-    let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
-    if (!backCamera && devices.length > 1) {
-      backCamera = devices[devices.length - 1]; // 通常列表最後是後鏡頭
+  function stopStream() {
+    if (currentStream) {
+      currentStream.getTracks().forEach(t => t.stop());
+      currentStream = null;
     }
+  }
 
-    const defaultDevice = backCamera || devices[0];
-    currentDeviceId = defaultDevice.deviceId;
+  async function startCamera(deviceId) {
+    try {
+      stopStream();
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+      });
+      video.srcObject = currentStream;
+
+      const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.textContent || '未知';
+      statusEl.textContent = `📷 目前使用：${selectedText}`;
+    } catch (err) {
+      log('❌ 開啟鏡頭失敗：' + err.message);
+    }
+  }
+
+  // 取得所有鏡頭清單並放進下拉選單
+  async function loadCameras() {
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    devices = allDevices.filter(d => d.kind === 'videoinput');
+
+    cameraSelect.innerHTML = '';
+    devices.forEach((d, i) => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
+
+      const label = d.label.toLowerCase();
+      if (label.includes('back') || label.includes('rear') || label.includes('後')) {
+        option.textContent = '後鏡頭';
+      } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
+        option.textContent = '前鏡頭';
+      } else {
+        option.textContent = `鏡頭 ${i + 1}`;
+      }
+      cameraSelect.appendChild(option);
+    });
+
+    if (devices.length > 0) {
+      // 預設使用後鏡頭，若沒有則使用第一個
+      let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.includes('後'));
+      if (!backCamera && devices.length > 1) {
+        backCamera = devices[devices.length - 1];
+      }
+
+      const defaultDevice = backCamera || devices[0];
+      currentDeviceId = defaultDevice.deviceId;
+      cameraSelect.value = currentDeviceId;
+      await startCamera(currentDeviceId);
+      log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
+    } else {
+      log('⚠️ 找不到鏡頭');
+    }
+  }
+
+  // 切換鏡頭按鈕
+  switchBtn.addEventListener('click', async () => {
+    if (devices.length === 0) return;
+    const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
+    const nextIndex = (currentIndex + 1) % devices.length;
+    currentDeviceId = devices[nextIndex].deviceId;
     cameraSelect.value = currentDeviceId;
     await startCamera(currentDeviceId);
-
-    log(`🎥 已啟動預設鏡頭：${defaultDevice.label || '未命名鏡頭'}`);
-  } else {
-    log('⚠️ 找不到鏡頭');
-  }
-}
-
-// 當使用者從下拉選單選擇鏡頭時自動切換
-cameraSelect.addEventListener('change', async (e) => {
-  currentDeviceId = e.target.value;
-  await startCamera(currentDeviceId);
-  log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
-});
-
-
-// 取得所有鏡頭清單並放進下拉選單
-async function loadCameras() {
-  const allDevices = await navigator.mediaDevices.enumerateDevices();
-  devices = allDevices.filter(d => d.kind === 'videoinput');
-
-  cameraSelect.innerHTML = '';
-  devices.forEach((d, i) => {
-    const option = document.createElement('option');
-    option.value = d.deviceId;
-    option.textContent = d.label || `鏡頭 ${i + 1}`;
-    cameraSelect.appendChild(option);
+    log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
   });
 
-// --- Debug: 印出所有可用攝影機 ---
-navigator.mediaDevices.enumerateDevices().then(devices => {
-  console.log("偵測到的裝置：");
-  devices.forEach(d => console.log(d.kind, d.label || "未命名", d.deviceId));
-});
-
-
-  if (devices.length > 0) {
-    currentDeviceId = devices[0].deviceId;
-    cameraSelect.value = currentDeviceId;
+  // 下拉式選單變更時
+  cameraSelect.addEventListener('change', async () => {
+    currentDeviceId = cameraSelect.value;
     await startCamera(currentDeviceId);
-  } else {
-    log('⚠️ 找不到鏡頭');
-  }
-}
+    log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
+  });
 
-// 切換鏡頭
-switchBtn.addEventListener('click', async () => {
-  if (devices.length === 0) return;
-  const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
-  const nextIndex = (currentIndex + 1) % devices.length;
-  currentDeviceId = devices[nextIndex].deviceId;
-  cameraSelect.value = currentDeviceId;
-  await startCamera(currentDeviceId);
-});
-
-// 當下拉選單改變時切換鏡頭
-cameraSelect.addEventListener('change', async () => {
-  currentDeviceId = cameraSelect.value;
-  await startCamera(currentDeviceId);
-});
-
-// 初始化
-await loadCameras();
-
+  // 初始化
+  await loadCameras();
 })();
 </script>
 </body>
