@@ -66,20 +66,43 @@ function stopStream() {
 }
 
 // 開啟指定鏡頭
-async function startCamera(deviceId) {
-  stopStream();
-  const constraints = {
-    video: deviceId ? { deviceId: { exact: deviceId } } : true
-  };
-
+async function startCamera(deviceId = null) {
   try {
+    let constraints;
+
+    if (deviceId) {
+      // 若指定了 deviceId，直接用該鏡頭
+      constraints = { video: { deviceId: { exact: deviceId } } };
+    } else {
+      // 嘗試優先使用後鏡頭
+      constraints = { video: { facingMode: { ideal: "environment" } } };
+    }
+
+    // 先停掉現有的 stream（如果有）
+    if (currentStream) {
+      currentStream.getTracks().forEach(t => t.stop());
+    }
+
+    // 嘗試啟動後鏡頭
     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = currentStream;
-    log('✅ 鏡頭已開啟');
+    log('📸 已啟動相機');
+
   } catch (err) {
-    log('❌ 開啟鏡頭失敗：' + err.message);
+    console.warn("後鏡頭啟動失敗，改用前鏡頭", err);
+
+    // 如果後鏡頭失敗，改用前鏡頭
+    try {
+      const fallbackConstraints = { video: { facingMode: { ideal: "user" } } };
+      currentStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+      video.srcObject = currentStream;
+      log('🤳 改用前鏡頭');
+    } catch (err2) {
+      log('❌ 無法啟動相機：' + err2.message);
+    }
   }
 }
+
 
 // 取得所有鏡頭清單並放進下拉選單
 async function loadCameras() {
