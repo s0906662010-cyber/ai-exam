@@ -94,6 +94,13 @@ async function loadCameras() {
     cameraSelect.appendChild(option);
   });
 
+// --- Debug: 印出所有可用攝影機 ---
+navigator.mediaDevices.enumerateDevices().then(devices => {
+  console.log("偵測到的裝置：");
+  devices.forEach(d => console.log(d.kind, d.label || "未命名", d.deviceId));
+});
+
+
   if (devices.length > 0) {
     currentDeviceId = devices[0].deviceId;
     cameraSelect.value = currentDeviceId;
