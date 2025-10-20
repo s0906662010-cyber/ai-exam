@@ -73,11 +73,22 @@ async function loadCameras() {
 
   cameraSelect.innerHTML = '';
   devices.forEach((d, i) => {
-    const option = document.createElement('option');
-    option.value = d.deviceId;
-    option.textContent = d.label || `鏡頭 ${i + 1}`;
-    cameraSelect.appendChild(option);
-  });
+  const option = document.createElement('option');
+  option.value = d.deviceId;
+
+  // 判斷是前鏡頭或後鏡頭
+  const label = d.label.toLowerCase();
+  if (label.includes('back') || label.includes('rear') || label.includes('後')) {
+    option.textContent = '後鏡頭';
+  } else if (label.includes('front') || label.includes('user') || label.includes('前')) {
+    option.textContent = '前鏡頭';
+  } else {
+    option.textContent = `鏡頭 ${i + 1}`;
+  }
+
+  cameraSelect.appendChild(option);
+});
+
 
   if (devices.length > 0) {
     // 嘗試預設使用「後鏡頭」，若沒有則使用第一個鏡頭
