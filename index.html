@@ -155,13 +155,33 @@
     log(`🔄 已切換鏡頭：${cameraSelect.selectedOptions[0].textContent}`);
   });
 
-  // === 模擬分析 ===
-  function analyzeFrame() {
-    const random = Math.floor(Math.random() * 100);
-    const risk = random < 20 ? '🟢 安全' :
-                 random < 60 ? '🟡 可疑' : '🔴 高風險';
-    log(`📊 做弊機率：約 ${random}%　→　${risk}`);
+  // === 運算分析 ===
+  async function analyzeFrame() {
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg');
+
+  const res = await fetch("http://127.0.0.1:5000/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: dataUrl })
+  });
+
+  const result = await res.json();
+  if (result.error) {
+    log("❌ " + result.error);
+    return;
   }
+
+  const percent = Math.round(result.score * 100);
+  const risk = percent < 20 ? '🟢 安全' :
+               percent < 60 ? '🟡 可疑' : '🔴 高風險';
+  log(`📊 做弊機率：約 ${percent}%　→　${risk}<br>${result.reasons.join("、")}`);
+}
+
 
   // === 開始/停止監測 ===
   monitorBtn.addEventListener('click', () => {
