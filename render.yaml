@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ni-exan
+    name: ai-exam
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -8,7 +8,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-    apt:  # 確保 apt: 的縮排與 envVars: 一致
+    # 新增 apt 區塊以安裝必要的系統套件
+    apt:
       packages:
         - libsentencepiece-dev
         - pkg-config
