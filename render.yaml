@@ -3,12 +3,9 @@ services:
     name: ai-exam
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    # 在 buildCommand 中直接安裝 apt 套件，並接著執行 pip install
+    buildCommand: apt-get update && apt-get install -y libsentencepiece-dev pkg-config && pip install -r requirements.txt
     startCommand: gunicorn CAL:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-    apt:
-      packages:
-        - libsentencepiece-dev
-        - pkg-config
