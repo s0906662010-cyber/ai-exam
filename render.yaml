@@ -8,7 +8,7 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-    apt:  # 確保 apt: 的縮排與 envVars: 一致
+    apt:
       packages:
         - libsentencepiece-dev
         - pkg-config
