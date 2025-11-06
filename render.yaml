@@ -8,3 +8,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+    # 新增 apt 區塊以安裝必要的系統套件
+    apt:
+      packages:
+        - libsentencepiece-dev
+        - pkg-config
