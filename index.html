@@ -164,7 +164,7 @@
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/jpeg');
 
-  const res = await fetch("http://127.0.0.1:5000/analyze", {
+  const res = await fetch("https://ai-exam-hl4n.onrender.com/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: dataUrl })
